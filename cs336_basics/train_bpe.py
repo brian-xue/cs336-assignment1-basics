@@ -50,7 +50,7 @@ def pretokenize_text_chunk(
     """
     Pretokenizes a chunk of text from the input file and counts the frequency of each pretoken sequence.
     """
-    with open(input_path, "rb", encoding="utf-8") as f:
+    with open(input_path, "rb") as f:
         f.seek(start)
         chunk = f.read(end - start)
     text = chunk.decode("utf-8", errors="ignore")
@@ -63,7 +63,7 @@ def serial_pretokenize_text(
     """
     Pretokenizes the entire text file serially and counts the frequency of each pretoken sequence.
     """
-    with open(input_path, "r") as f:
+    with open(input_path, "r", encoding="utf-8") as f:
         text = f.read()
     return count_word_freq(text, special_tokens)
 
@@ -164,7 +164,7 @@ def remove_pairs(
             s.discard(word)
             if not s:
                 del pair_to_words[pair]
-        new_count = freq.get(pair, 0) - count * freq
+        new_count = pair_counts.get(pair, 0) - count * freq
         if new_count <= 0:
             pair_counts.pop(pair, None)
         else:
@@ -262,7 +262,7 @@ def train_bpe(
             pair_freqs.pop((a, b), None)
             continue
         
-        for word in affected_words:
+        for word in list(affected_words):
             freq = word_freqs.get(word, 0)
             if freq <= 0:
                 continue
