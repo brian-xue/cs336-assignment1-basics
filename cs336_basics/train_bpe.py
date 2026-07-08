@@ -91,6 +91,107 @@ def parallel_pretokenize_text(
             merged_word_freqs.update(word_freqs)
     return dict(merged_word_freqs)
 
+def count_pairs_in_word(word: tuple[bytes, ...]) -> dict[tuple[bytes, bytes], int]:
+    """
+    Counts the frequency of each pair of consecutive pre-tokens in the given pre-token sequence.
+    """
+    pair_freqs = {}
+    if len(word) < 2:
+        return pair_freqs
+    pairs = zip(word, word[1:])
+    for pair in pairs:
+        pair_freqs[pair] = pair_freqs.get(pair, 0) + 1
+    return pair_freqs
+
+def apply_merge(
+    word: tuple[bytes, ...],
+    a: bytes,
+    b: bytes,
+    new_token: bytes,
+) -> tuple[bytes, ...]:
+    """
+    Applies a merge operation to the given pre-token sequence, replacing occurrences of the pair (a, b) with new_token.
+    """
+    if len(word) < 2:
+        return word
+    new_word = []
+    i = 0
+    length = len(word)
+    while i < length:
+        if i < length - 1 and word[i] == a and word[i + 1] == b:
+            new_word.append(new_token)
+            i += 2
+        else:
+            new_word.append(word[i])
+            i += 1
+    return tuple(new_word)
+
+def build_freq_stats(
+        word_freqs: dict[tuple[bytes, ...], int]
+        ) -> tuple[dict[tuple[bytes, bytes], int], dict[tuple[bytes, bytes], set[tuple[bytes, ...]]]]:
+    """
+    Builds frequency statistics for pairs of consecutive pre-tokens.
+    Returns:
+        pair_freqs (dict[tuple[bytes, bytes], int]): Frequency of each pair
+        pair_to_words (dict[tuple[bytes, bytes], set[tuple[bytes, ...]]]): Mapping from each pair to the set of pre-token sequences that contain it.
+    """
+    pair_freqs = {}  # dict[tuple[bytes, bytes], int]
+    pair_to_words = {}  # dict[tuple[bytes, bytes], set[tuple[bytes, ...]]]
+    for word, freq in word_freqs.items():
+        if len(word) < 2:
+            continue
+        partial = count_pairs_in_word(word)
+        for pair, count in partial.items():
+            pair_freqs[pair] = pair_freqs.get(pair, 0) + count * freq
+            if pair not in pair_to_words:
+                pair_to_words[pair] = set()
+            pair_to_words[pair].add(word)
+    return pair_freqs, pair_to_words
+
+def remove_pairs(
+        word: tuple[bytes, ...],
+        freq: dict[tuple[bytes, bytes], int],
+        pair_counts: dict[tuple[bytes, bytes], int],
+        pair_to_words: dict[tuple[bytes, bytes], set[tuple[bytes, ...]]],
+        ) -> None:
+    """
+    Removes the counts of pairs in the given pre-token sequence from the frequency statistics.
+    """
+    local_pair_freqs = count_pairs_in_word(word)
+    for pair, count in local_pair_freqs.items():
+        s = pair_to_words.get(pair)
+        if s is not None:
+            s.discard(word)
+            if not s:
+                del pair_to_words[pair]
+        new_count = freq.get(pair, 0) - count * freq
+        if new_count <= 0:
+            pair_counts.pop(pair, None)
+        else:
+            pair_counts[pair] = new_count
+
+def add_pairs(
+        word: tuple[bytes, ...],
+        freq: dict[tuple[bytes, bytes], int],
+        pair_counts: dict[tuple[bytes, bytes], int],
+        pair_to_words: dict[tuple[bytes, bytes], set[tuple[bytes, ...]]],
+        *,
+        is_word_new: bool
+        ) -> None:
+    """
+    Adds the counts of pairs in the given pre-token sequence to the frequency statistics.
+    """
+    if len(word) < 2:
+        return
+    local_pair_freqs = count_pairs_in_word(word)
+    for pair, count in local_pair_freqs.items():
+        if is_word_new:
+            if pair not in pair_to_words:
+                pair_to_words[pair] = set()
+            pair_to_words[pair].add(word)
+        new_count = pair_counts.get(pair, 0) + count * freq
+        pair_counts[pair] = new_count
+
 
 def train_bpe(
     input_path: str,
@@ -139,16 +240,8 @@ def train_bpe(
 
     # --- BPE training loop ---
     merges = [] # list[tuple[bytes, bytes]], The list of merges learned during training
+    pair_freqs, pair_to_words = build_freq_stats(word_freqs)
     while next_id < vocab_size:
-        # Count pairs of consecutive pre-tokens
-        pair_freqs = {} # dict[tuple[bytes, bytes], int], Frequency of each pair of consecutive pre-tokens
-        for word, freq in word_freqs.items():
-            if len(word) < 2:
-                continue
-            pairs = zip(word, word[1:])
-            for pair in pairs:
-                pair_freqs[pair] = pair_freqs.get(pair, 0) + freq
-        
         if not pair_freqs:
             break  # No more pairs to merge
         
@@ -164,21 +257,23 @@ def train_bpe(
 
         # Update word_freqs with the new merged token
         new_word_freqs = {} # dict[tuple[bytes, ...], int], Frequency of each pre-token sequence after merging
-        for word, freq in word_freqs.items():
-            if len(word) < 2:
-                new_word_freqs[word] = new_word_freqs.get(word, 0) + freq
+        affected_words = pair_to_words.get((a, b))
+        if affected_words is None:
+            pair_freqs.pop((a, b), None)
+            continue
+        
+        for word in affected_words:
+            freq = word_freqs.get(word, 0)
+            if freq <= 0:
                 continue
-            new_word = [] # list[bytes], The new pre-token sequence after merging
-            i = 0
-            length = len(word)
-            while i < length:
-                if i < length - 1 and word[i] == a and word[i + 1] == b:
-                    new_word.append(new_token)
-                    i += 2
-                else:
-                    new_word.append(word[i])
-                    i += 1
-            new_word_freqs[tuple(new_word)] = new_word_freqs.get(tuple(new_word), 0) + freq
-        word_freqs = new_word_freqs
-    
+            remove_pairs(word, freq, pair_freqs, pair_to_words)
+            del word_freqs[word]
+            new_word = apply_merge(word, a, b, new_token)
+            new_word_freqs[new_word] = new_word_freqs.get(new_word, 0) + freq
+        
+        for new_word, freq in new_word_freqs.items():
+            existed = new_word in word_freqs
+            word_freqs[new_word] = word_freqs.get(new_word, 0) + freq
+            add_pairs(new_word, freq, pair_freqs, pair_to_words, is_word_new=not existed)
+
     return vocab, merges
