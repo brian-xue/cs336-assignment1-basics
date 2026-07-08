@@ -50,7 +50,7 @@ def pretokenize_text_chunk(
     """
     Pretokenizes a chunk of text from the input file and counts the frequency of each pretoken sequence.
     """
-    with open(input_path, "r", encoding="utf-8") as f:
+    with open(input_path, "rb", encoding="utf-8") as f:
         f.seek(start)
         chunk = f.read(end - start)
     text = chunk.decode("utf-8", errors="ignore")
@@ -63,7 +63,7 @@ def serial_pretokenize_text(
     """
     Pretokenizes the entire text file serially and counts the frequency of each pretoken sequence.
     """
-    with open(input_path, "r", encoding="utf-8") as f:
+    with open(input_path, "r") as f:
         text = f.read()
     return count_word_freq(text, special_tokens)
 
@@ -97,7 +97,7 @@ def train_bpe(
     vocab_size: int,
     special_tokens: list[str],
     *,
-    num_processes: int,
+    num_processes: int | None = None,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     """
     Train a BPE tokenizer on the given input file.
