@@ -26,7 +26,7 @@ class Tokenizer:
 
         self.special_tokens = special_tokens if special_tokens is not None else []
         self.special_tokens_bytes = [] # list[bytes], Stores the byte representations of special tokens
-        self.special_tokens_id = {} # dict[bytes, int], Maps byte representations of special tokens to their corresponding token IDs
+        self.special_tokens_id = {} # dict[str, int], Maps string representations of special tokens to their corresponding token IDs
 
         self.rx = re.compile(GPT2_PRETOKENIZATION_REGEX)
 
@@ -39,11 +39,11 @@ class Tokenizer:
                     self.vocab[new_id] = token_bytes
                     self.byte_to_id[token_bytes] = new_id
                 self.special_tokens_bytes.append(token_bytes)
-                self.special_tokens_id[token_bytes] = self.byte_to_id[token_bytes]
+                self.special_tokens_id[token] = self.byte_to_id[token_bytes]
 
             # sort the special tokens by length in descending order to ensure longer tokens are matched first
-            sorted_special_tokens = sorted(self.special_tokens_bytes, key=lambda x: len(x), reverse=True)
-            self._special_re = re.compile(b"|".join(re.escape(token) for token in sorted_special_tokens))
+            sorted_special_tokens = sorted(self.special_tokens, key=lambda x: len(x), reverse=True)
+            self._special_re = re.compile("|".join(re.escape(token) for token in sorted_special_tokens))
             self._max_special_token_length = max(len(token) for token in sorted_special_tokens)
         else:
             self._special_re = None
@@ -116,11 +116,11 @@ class Tokenizer:
                     break
                 process_chunk = buf[:cutoff]
                 buf = buf[cutoff:]
-                for token_id in self._encode_plain_text(process_chunk):
+                for token_id in self.encode(process_chunk):
                     yield token_id
         
         # flush the remaining buffer
-        for token_id in self._encode_plain_text(buf):
+        for token_id in self.encode(buf):
             yield token_id
 
 
@@ -147,8 +147,8 @@ class Tokenizer:
             # Convert the piece to bytes
             piece_bytes = piece.encode("utf-8")
             # Apply BPE merging to the piece and convert to token IDs
-            for token in self._bpe_merge([piece_bytes]):
-                output_ids.append(self.byte_to_id(token))
+            for token in self._bpe_merge(piece_bytes):
+                output_ids.append(self.byte_to_id[token])
         return output_ids
 
     def _bpe_merge(self, tokens: bytes) -> list[bytes]:
