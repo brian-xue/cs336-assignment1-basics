@@ -89,7 +89,14 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    raise NotImplementedError
+    from cs336_basics.modules import SwiGLUModule
+    swiglu = SwiGLUModule(d_model=d_model, d_ff=d_ff, device=in_features.device, dtype=in_features.dtype)
+    swiglu.load_state_dict({
+        "W1.weight": w1_weight.to(device=in_features.device, dtype=in_features.dtype),
+        "W2.weight": w2_weight.to(device=in_features.device, dtype=in_features.dtype),
+        "W3.weight": w3_weight.to(device=in_features.device, dtype=in_features.dtype),
+    })
+    return swiglu(in_features)
 
 
 def run_scaled_dot_product_attention(
