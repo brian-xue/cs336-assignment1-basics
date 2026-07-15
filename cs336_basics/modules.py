@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from einops import rearrange, einsum, reduce
-from jaxtyping import Float, Int, Bool, Tuple, List, Dict, Optional
+# from jaxtyping import Float, Int, Bool, Tuple, List, Dict, Optional
 import math
 
 class LinearModule(nn.Module):
@@ -100,7 +100,7 @@ class RoPEModule(nn.Module):
     Rotary Positional Embedding (RoPE) module.
     Applies rotary positional embeddings to the input tensor.
     """
-    def __init__(self, theta: float, d_k: int, max_seq_len: int, device: torch.device |None = None):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device: torch.device |None = None, dtype: torch.dtype |None = None):
         # Initialize the RoPE module with the given parameters.
         # theta: The base frequency for the rotary embeddings.
         # d_k: The dimension of the key/query vectors (must be even).
@@ -199,3 +199,58 @@ def dot_product_attention(q: torch.Tensor,
     return output
 
 
+class MultiheadSelfAttentionModule(nn.Module):
+    """
+    Multihead Self-Attention module.
+    """
+    def __init__(self, d_model:int, num_heads:int, max_seq_len: int|None=None, theta: float|None=None,  device: torch.device |None = None, dtype: torch.dtype |None = None):
+        super().__init__()
+        if d_model % num_heads != 0:
+            raise ValueError(f"d_model ({d_model}) must be divisible by num_heads ({num_heads}).")
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_k = d_model // num_heads
+        self.max_seq_len = max_seq_len 
+        self.theta = theta
+
+        # Define the linear layers for query, key, value, and output projections
+        self.qkv_proj = LinearModule(in_features=d_model, out_features=3*d_model, device=device, dtype=dtype)
+        self.o_proj = LinearModule(in_features=d_model, out_features=d_model, device=device, dtype=dtype)
+
+        # Define the RoPE module for positional embeddings
+        if self.max_seq_len is not None and self.theta is not None:
+            self.rope = RoPEModule(theta=self.theta, d_k=self.d_k, max_seq_len=self.max_seq_len, device=device, dtype=dtype)
+        else:
+            self.rope = None
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
+        # x: (batch_size, seq_len, d_model)
+        # token_positions: (batch_size, seq_len), optional
+        # output: (batch_size, seq_len, d_model)
+
+        # Project the input to queries, keys, and values
+        qkv = self.qkv_proj(x)  # (batch_size, seq_len, 3*d_model)
+        q, k, v = torch.chunk(qkv, 3, dim=-1)
+
+        # Reshape for multihead attention
+        q = rearrange(q, "b s (h d) -> b h s d", h=self.num_heads)  # (batch_size, num_heads, seq_len, d_k)
+        k = rearrange(k, "b s (h d) -> b h s d", h=self.num_heads)  # (batch_size, num_heads, seq_len, d_k)
+        v = rearrange(v, "b s (h d) -> b h s d", h=self.num_heads)  # (batch_size, num_heads, seq_len, d_k)
+
+        # Apply RoPE if token_positions are provided
+        if token_positions is not None and self.rope is not None:
+            q = self.rope(q, token_positions)  # (batch_size, num_heads, seq_len, d_k)
+            k = self.rope(k, token_positions)  # (batch_size, num_heads, seq_len, d_k)
+        
+        # causal mask for self-attention
+        seq_len = x.shape[1]
+        causal_mask = torch.triu(torch.ones(seq_len, seq_len, device=x.device, dtype=torch.bool), diagonal=1)  # (seq_len, seq_len)
+
+        # Compute the attention output
+        attn_output = dot_product_attention(q, k, v, mask=~causal_mask)  # (batch_size, num_heads, seq_len, d_k)
+        # Reshape the attention output back to the original shape
+        attn_output = rearrange(attn_output, "b h s d -> b s (h d)")  # (batch_size, seq_len, d_model)
+
+        # Project the attention output back to the original dimension
+        output = self.o_proj(attn_output)  # (batch_size, seq_len, d_model)
+        return output
