@@ -117,7 +117,9 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
-    raise NotImplementedError
+    from cs336_basics.modules import dot_product_attention
+    return dot_product_attention(Q, K, V, mask)
+
 
 
 def run_multihead_self_attention(
@@ -213,7 +215,9 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    from cs336_basics.modules import RoPEModule
+    rope = RoPEModule(theta=theta, d_k=d_k, max_seq_len=max_seq_len, device=in_query_or_key.device, dtype=in_query_or_key.dtype)
+    return rope(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
@@ -447,7 +451,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    from cs336_basics.modules import softmax
+    return softmax(in_features, dim=dim)
 
 
 def run_cross_entropy(
