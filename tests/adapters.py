@@ -304,7 +304,19 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    from cs336_basics.modules import TransformerBlockModule
+    block = TransformerBlockModule(d_model=d_model, num_heads=num_heads, d_ff=d_ff, max_seq_len=max_seq_len, theta=theta, device=in_features.device, dtype=in_features.dtype)
+    block.load_state_dict({
+        "mha.qkv_proj.weight": torch.cat([weights["attn.q_proj.weight"], weights["attn.k_proj.weight"], weights["attn.v_proj.weight"]], dim=0).to(device=in_features.device, dtype=in_features.dtype),
+        "mha.o_proj.weight": weights["attn.output_proj.weight"].to(device=in_features.device, dtype=in_features.dtype),
+        "ln1.weight": weights["ln1.weight"].to(device=in_features.device, dtype=in_features.dtype),
+        "swiglu.w1.weight": weights["ffn.w1.weight"].to(device=in_features.device, dtype=in_features.dtype),
+        "swiglu.w2.weight": weights["ffn.w2.weight"].to(device=in_features.device, dtype=in_features.dtype),
+        "swiglu.w3.weight": weights["ffn.w3.weight"].to(device=in_features.device, dtype=in_features.dtype),
+        "ln2.weight": weights["ln2.weight"].to(device=in_features.device, dtype=in_features.dtype)
+    })
+    token_positions = torch.arange(in_features.shape[-2], device=in_features.device).unsqueeze(0).expand(in_features.shape[0], -1) # (batch, sequence_length)
+    return block(in_features, token_positions=token_positions)
 
 
 def run_transformer_lm(

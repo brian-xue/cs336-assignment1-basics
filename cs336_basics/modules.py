@@ -254,3 +254,30 @@ class MultiheadSelfAttentionModule(nn.Module):
         # Project the attention output back to the original dimension
         output = self.o_proj(attn_output)  # (batch_size, seq_len, d_model)
         return output
+    
+
+class TransformerBlockModule(nn.Module):
+    """
+    Transformer Block module consisting of Multihead Self-Attention and Feedforward layers.
+    """
+    def __init__(self, d_model:int, num_heads:int, d_ff:int, max_seq_len: int|None=None, theta: float|None=None, device: torch.device |None = None, dtype: torch.dtype |None = None):
+        super().__init__()
+        self.mha = MultiheadSelfAttentionModule(d_model=d_model, num_heads=num_heads, max_seq_len=max_seq_len, theta=theta, device=device, dtype=dtype)
+        self.ln1 = RMSNormModule(d_model=d_model)
+        self.swiglu = SwiGLUModule(d_model=d_model, d_ff=d_ff)
+        self.ln2 = RMSNormModule(d_model=d_model)
+
+    def forward(self, x: torch.Tensor,token_positions: torch.Tensor | None = None) -> torch.Tensor: 
+        # x: (batch_size, seq_len, d_model)
+        # output: (batch_size, seq_len, d_model)
+
+        # pre-Norm Multihead Self-Attention with residual connection 
+        x1 = self.ln1(x)
+        attn_output = self.mha(x1, token_positions=token_positions)
+        x = x + attn_output  # Residual connection
+
+        # pre-Norm Feedforward with residual connection
+        x2 = self.ln2(x)
+        ff_output = self.swiglu(x2)
+        x = x + ff_output  # Residual connection
+        return x
