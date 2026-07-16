@@ -281,3 +281,31 @@ class TransformerBlockModule(nn.Module):
         ff_output = self.swiglu(x2)
         x = x + ff_output  # Residual connection
         return x
+
+
+
+class Transformer(nn.Module):
+    """
+    The full transformer model consisting all the components: embedding, multiple transformer blocks, and output projection.
+    """
+    def __init__(self, vocab_size:int, context_length:int, d_model:int, num_heads:int, d_ff:int, num_layers:int, max_seq_len: int|None=None, rope_theta: float|None=None, device: torch.device |None = None, dtype: torch.dtype |None = None):
+        super().__init__()
+        self.max_seq_len = max_seq_len if max_seq_len is not None else context_length
+        self.token_embeddings = EmbeddingModule(num_embeddings=vocab_size, embedding_dim=d_model, device=device, dtype=dtype)
+        self.layers = nn.ModuleList([
+            TransformerBlockModule(d_model=d_model, num_heads=num_heads, d_ff=d_ff, max_seq_len=self.max_seq_len, theta=rope_theta, device=device, dtype=dtype)
+            for _ in range(num_layers)
+        ])
+        self.ln_final = RMSNormModule(d_model=d_model)
+        self.lm_head = LinearModule(in_features=d_model, out_features=vocab_size, device=device, dtype=dtype)
+
+    def forward(self, in_indices: torch.Tensor):
+        # in_indices: (batch_size, seq_len) the input token indices
+        # output: (batch_size, seq_len, vocab_size) the logits for each token
+        x = self.token_embeddings(in_indices)  # (batch_size, seq_len, d_model)
+        token_positions = torch.arange(in_indices.shape[1], device=in_indices.device).unsqueeze(0).expand(in_indices.shape[0], -1)  # (batch_size, seq_len)
+        for block in self.layers:
+            x = block(x, token_positions=token_positions)  # (batch_size, seq_len, d_model)
+        x = self.ln_final(x)  # (batch_size, seq_len, d_model)
+        x = self.lm_head(x)  # (batch_size, seq_len, vocab_size)
+        return x

@@ -310,9 +310,9 @@ def run_transformer_block(
         "mha.qkv_proj.weight": torch.cat([weights["attn.q_proj.weight"], weights["attn.k_proj.weight"], weights["attn.v_proj.weight"]], dim=0).to(device=in_features.device, dtype=in_features.dtype),
         "mha.o_proj.weight": weights["attn.output_proj.weight"].to(device=in_features.device, dtype=in_features.dtype),
         "ln1.weight": weights["ln1.weight"].to(device=in_features.device, dtype=in_features.dtype),
-        "swiglu.w1.weight": weights["ffn.w1.weight"].to(device=in_features.device, dtype=in_features.dtype),
-        "swiglu.w2.weight": weights["ffn.w2.weight"].to(device=in_features.device, dtype=in_features.dtype),
-        "swiglu.w3.weight": weights["ffn.w3.weight"].to(device=in_features.device, dtype=in_features.dtype),
+        "swiglu.W1.weight": weights["ffn.w1.weight"].to(device=in_features.device, dtype=in_features.dtype),
+        "swiglu.W2.weight": weights["ffn.w2.weight"].to(device=in_features.device, dtype=in_features.dtype),
+        "swiglu.W3.weight": weights["ffn.w3.weight"].to(device=in_features.device, dtype=in_features.dtype),
         "ln2.weight": weights["ln2.weight"].to(device=in_features.device, dtype=in_features.dtype)
     })
     token_positions = torch.arange(in_features.shape[-2], device=in_features.device).unsqueeze(0).expand(in_features.shape[0], -1) # (batch, sequence_length)
@@ -398,7 +398,42 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.modules import Transformer
+    transformer = Transformer(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+        device=in_indices.device,
+        dtype=torch.float32,
+    )
+    layers_state_dict = {}
+    ref_dtype = torch.float32
+    for layer_idx in range(num_layers):
+        layers_state_dict.update({
+            f"layers.{layer_idx}.mha.qkv_proj.weight": torch.cat([
+                weights[f"layers.{layer_idx}.attn.q_proj.weight"],
+                weights[f"layers.{layer_idx}.attn.k_proj.weight"],
+                weights[f"layers.{layer_idx}.attn.v_proj.weight"]
+            ], dim=0).to(device=in_indices.device, dtype=ref_dtype),
+            f"layers.{layer_idx}.mha.o_proj.weight": weights[f"layers.{layer_idx}.attn.output_proj.weight"].to(device=in_indices.device, dtype=ref_dtype),
+            f"layers.{layer_idx}.ln1.weight": weights[f"layers.{layer_idx}.ln1.weight"].to(device=in_indices.device, dtype=ref_dtype),
+            f"layers.{layer_idx}.swiglu.W1.weight": weights[f"layers.{layer_idx}.ffn.w1.weight"].to(device=in_indices.device, dtype=ref_dtype),
+            f"layers.{layer_idx}.swiglu.W2.weight": weights[f"layers.{layer_idx}.ffn.w2.weight"].to(device=in_indices.device, dtype=ref_dtype),
+            f"layers.{layer_idx}.swiglu.W3.weight": weights[f"layers.{layer_idx}.ffn.w3.weight"].to(device=in_indices.device, dtype=ref_dtype),
+            f"layers.{layer_idx}.ln2.weight": weights[f"layers.{layer_idx}.ln2.weight"].to(device=in_indices.device, dtype=ref_dtype)
+        })
+    transformer.load_state_dict({
+        "token_embeddings.embedding": weights["token_embeddings.weight"].to(device=in_indices.device, dtype=ref_dtype),
+        **layers_state_dict,
+        "ln_final.weight": weights["ln_final.weight"].to(device=in_indices.device, dtype=ref_dtype),
+        "lm_head.weight": weights["lm_head.weight"].to(device=in_indices.device, dtype=ref_dtype)
+    })
+    return transformer(in_indices)
+
 
 
 def run_rmsnorm(
