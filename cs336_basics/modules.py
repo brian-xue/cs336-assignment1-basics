@@ -309,3 +309,24 @@ class Transformer(nn.Module):
         x = self.ln_final(x)  # (batch_size, seq_len, d_model)
         x = self.lm_head(x)  # (batch_size, seq_len, vocab_size)
         return x
+
+
+def cross_entropy_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    """
+    Given a tensor of inputs and targets, compute the average cross-entropy loss across examples.
+    logits: (batch_size, vocab_size) inputs[i][j] is the unnormalized logit of jth class for the ith example.
+    targets:(batch,) Tensor of shape (batch_size,) with the index of the correct class.
+            Each value must be between 0 and `num_classes - 1`.
+    Returns:
+        The average cross-entropy loss over the batch and sequence length.
+    """
+
+    batch_size, vocab_size = logits.shape
+    max_logits = logits.max(dim=1, keepdim=True).values
+    logits_exp = torch.exp(logits - max_logits)
+    logits_sum = logits_exp.sum(dim=1, keepdim=True)
+    log_probs = logits - max_logits - torch.log(logits_sum)
+    loss = -log_probs[torch.arange(batch_size), targets].mean()
+    return loss
+
+   
