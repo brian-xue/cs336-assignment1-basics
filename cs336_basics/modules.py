@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 from einops import rearrange, einsum, reduce
+from typing import Optional
+from collections import Callable, Iterable
 # from jaxtyping import Float, Int, Bool, Tuple, List, Dict, Optional
 import math
 
@@ -329,4 +331,61 @@ def cross_entropy_loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Ten
     loss = -log_probs[torch.arange(batch_size), targets].mean()
     return loss
 
-   
+
+class AdamW(torch.optim.Optimizer):
+    """
+    Implements the AdamW optimization algorithm.
+    """
+    def __init__(self, params: Iterable[torch.nn.Parameter], lr: float = 1e-3, betas: tuple[float, float] = (0.9, 0.999), weight_decay: float = 0.01, eps: float = 1e-8):
+        if lr <= 0.0:
+            raise ValueError(f"Invalid learning rate: {lr}")
+        defaults = dict(lr=lr, betas=betas, weight_decay=weight_decay, eps=eps)
+        super().__init__(params, defaults)
+    
+    def step(self, closure: Optional[Callable[[], float]] = None) -> Optional[float]:
+        """
+        Performs a single optimization step.
+        """
+        loss = None if closure is None else closure()
+        for group in self.param_groups:
+            lr = group['lr']
+            weight_decay = group['weight_decay']
+            beta1, beta2 = group['betas']
+            eps = group['eps']
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                grad = p.grad.data
+                if grad.is_sparse:
+                    raise RuntimeError('AdamW does not support sparse gradients')
+                
+                state = self.state[p]
+                if len(state) == 0:
+                    state['step'] = 0
+                    state['exp_avg'] = torch.zeros_like(p.data)
+                    state['exp_avg_sq'] = torch.zeros_like(p.data)
+                
+                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
+                
+                state['step'] += 1
+                
+                # Update biased first moment estimate
+                exp_avg.mul_(beta1).add_(grad, alpha=1 - beta1)
+                # Update biased second raw moment estimate
+                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
+                
+                # Compute bias-corrected first moment estimate
+                bias_correction1 = 1 - beta1 ** state['step']
+                # Compute bias-corrected second raw moment estimate
+                bias_correction2 = 1 - beta2 ** state['step']
+
+                # apply weight decay
+                if weight_decay != 0:
+                    p.data.add_(p.data, alpha=-weight_decay * lr)
+                
+                # apply momentum-adjusted weights update: m/sqrt(v) + eps
+                denom = (exp_avg_sq.sqrt() / (bias_correction2 ** 0.5)).add_(group['eps'])
+                step_lr = lr / bias_correction1
+                p.data.addcdiv_(exp_avg, denom, value=-step_lr)
+        return loss
+
