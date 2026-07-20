@@ -2,9 +2,10 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import numpy.typing as npt
 from einops import rearrange, einsum, reduce
 from typing import Optional
-from collections import Callable, Iterable
+from collections.abc import Callable, Iterable
 # from jaxtyping import Float, Int, Bool, Tuple, List, Dict, Optional
 import math
 
@@ -389,3 +390,52 @@ class AdamW(torch.optim.Optimizer):
                 p.data.addcdiv_(exp_avg, denom, value=-step_lr)
         return loss
 
+
+
+def cosine_lr_scheduler(t: int, lr_max: float, lr_min: float, T_w:int, T_c:int):
+    """
+    Cosine learning rate scheduler with warmup.
+    t: current step
+    lr_max: maximum learning rate
+    lr_min: minimum learning rate
+    T_w: number of warmup steps
+    T_c: total number of steps for cosine decay
+    Returns:
+        The learning rate at step t.
+    """
+    if t < T_w:
+        return lr_max * t / T_w
+    elif t <= T_c:
+        return lr_min + 0.5 * (lr_max - lr_min) * (1 + math.cos(math.pi * (t - T_w) / (T_c - T_w)))
+    else:
+        return lr_min 
+    
+def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_norm: float, epi: float = 1e-6):
+    """
+    Clips the gradients of the given parameters to have a maximum norm of max_norm.
+    parameters: Iterable of model parameters
+    max_norm: maximum allowed norm for the gradients
+    epi: small value to avoid division by zero
+    """
+    total_norm = torch.sqrt(sum(p.grad.data.norm() ** 2 for p in parameters if p.grad is not None))
+    if total_norm > max_norm:
+        clip_coef = max_norm / (total_norm + epi)
+        for p in parameters:
+            if p.grad is not None:
+                p.grad.data.mul_(clip_coef)
+        
+
+def get_batch(x: npt.NDArray, batch_size: int, context_length: int, device: str) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Generates a batch of input and target sequences for training.
+    x: the input array of token ids
+    batch_size: the number of sequences in the batch
+    context_length: the length of each sequence
+    device: the device to place the tensors on
+    Returns:
+        A tuple of (input_batch, target_batch) where both are tensors of shape (batch_size, context_length)
+    """
+    ix = np.random.randint(0, len(x) - context_length - 1, size=batch_size)
+    x_batch = torch.tensor([x[i:i+context_length] for i in ix], dtype=torch.long, device=device)
+    y_batch = torch.tensor([x[i+1:i+context_length+1] for i in ix], dtype=torch.long, device=device)
+    return x_batch, y_batch
