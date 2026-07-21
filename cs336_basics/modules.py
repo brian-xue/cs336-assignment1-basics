@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import os, typing
 import numpy.typing as npt
 from einops import rearrange, einsum, reduce
 from typing import Optional
@@ -435,7 +436,44 @@ def get_batch(x: npt.NDArray, batch_size: int, context_length: int, device: str)
     Returns:
         A tuple of (input_batch, target_batch) where both are tensors of shape (batch_size, context_length)
     """
-    ix = np.random.randint(0, len(x) - context_length - 1, size=batch_size)
-    x_batch = torch.tensor([x[i:i+context_length] for i in ix], dtype=torch.long, device=device)
-    y_batch = torch.tensor([x[i+1:i+context_length+1] for i in ix], dtype=torch.long, device=device)
+    max_start_index = len(x) - context_length - 1
+    if max_start_index < 0:
+        raise ValueError("Input array is too short for the specified context length")
+    ix = np.random.randint(0, max_start_index + 1, size=batch_size)
+    offsets = np.arange(context_length)
+    indices = ix[:, None] + offsets
+    x_batch_np = x[indices]
+    y_batch_np = x[indices + 1]
+    x_batch = torch.from_numpy(x_batch_np).to(device, non_blocking=True)
+    y_batch = torch.from_numpy(y_batch_np).to(device, non_blocking=True)
     return x_batch, y_batch
+
+
+def save_checkpoint(model: nn.Module, optimizer: torch.optim.Optimizer, iteration: int, out: str | os.PathLike | typing.IO[bytes]):
+    """
+    Saves the model and optimizer state to a checkpoint file.
+    model: the model to save
+    optimizer: the optimizer to save
+    iteration: the current training iteration
+    out: the output file path or file-like object
+    """
+    checkpoint = {
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'iteration': iteration
+    }
+    torch.save(checkpoint, out)
+
+
+def load_checkpoint(src: str | os.PathLike | typing.IO[bytes], model: nn.Module, optimizer: torch.optim.Optimizer):
+    """
+    Loads the model and optimizer state from a checkpoint file.
+    src: the source file path or file-like object
+    model: the model to load the state into
+    optimizer: the optimizer to load the state into
+    """
+    checkpoint = torch.load(src, map_location='cpu')
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    iteration = checkpoint['iteration']
+    return iteration

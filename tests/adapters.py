@@ -583,8 +583,8 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    from cs336_basics.modules import cosine_lr_schedule
-    return cosine_lr_schedule(t = it, lr_max = max_learning_rate, lr_min = min_learning_rate, T_w = warmup_iters, T_c = cosine_cycle_iters)
+    from cs336_basics.modules import cosine_lr_scheduler
+    return cosine_lr_scheduler(t = it, lr_max = max_learning_rate, lr_min = min_learning_rate, T_w = warmup_iters, T_c = cosine_cycle_iters)
 
 
 
@@ -604,7 +604,8 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    from cs336_basics.modules import save_checkpoint
+    save_checkpoint(model=model, optimizer=optimizer, iteration=iteration, out=out)
 
 
 def run_load_checkpoint(
@@ -625,7 +626,8 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
+    from cs336_basics.modules import load_checkpoint
+    return load_checkpoint(src=src, model=model, optimizer=optimizer)
 
 
 def get_tokenizer(
