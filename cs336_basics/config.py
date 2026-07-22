@@ -63,7 +63,7 @@ class TrainingConfig:
     log_interval: int = field(default=100, metadata={"help": "Interval (in iterations) at which to log training metrics."})
 
     ckpt_interval: int = field(default=5000, metadata={"help": "Interval (in iterations) at which to save model checkpoints."})
-    ckpt_path: str = field(default="checkpoints", metadata={"help": "Directory to save model checkpoints."})
+    ckpt_path: str = field(default="checkpoints/checkpoint.pt", metadata={"help": "Directory to save model checkpoints."})
     resume_from_ckpt: Optional[str] = field(default=None, metadata={"help": "Path to a checkpoint to resume training from. If None, training starts from scratch."})
 
     seed: int = field(default=42, metadata={"help": "Random seed for reproducibility."})

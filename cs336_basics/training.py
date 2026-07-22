@@ -144,7 +144,8 @@ def main():
                 wandb.log({"train_loss": loss.item(), "val_loss": val_loss, "iteration": iter+1})
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                modules.save_checkpoint(model=model, optimizer=optimizer, iteration=iter+1, out=cfg.training.ckpt_path)
+                best_ckpt_path = cfg.training.ckpt_path.replace(".pt", f"_best.pt")
+                modules.save_checkpoint(model=model, optimizer=optimizer, iteration=iter+1, out=best_ckpt_path)
                 print(f"Saved checkpoint at iter {iter+1} with validation loss {val_loss:.4f}")
         
         if (iter+1) % cfg.training.ckpt_interval == 0:
@@ -155,6 +156,6 @@ def main():
     if wandb is not None:
         wandb.finish()
 
-        
+
 if __name__ == "__main__":
     main()
